@@ -1,81 +1,142 @@
-using System.Collections;
 using UnityEngine;
 
 public class PlayerTeleporter : MonoBehaviour
 {
-    [Header("Teleport Destination")]
-    [SerializeField] private Transform TeleportZoneObject;
+    [Header("Destination")]
+    [SerializeField] private Transform destination;
 
-    [Header("Player Setup")]
-    [Tooltip("Drag First Person Controller here")]
-    [SerializeField] private Transform FirstPersonController;
+    [Header("Player")]
+    [SerializeField] private Transform firstPersonController;
 
-    [Header("Rotation")]
-    [Tooltip("-90 turns left, 90 turns right")]
-    [SerializeField] private float TurnAmount = -90f;
+    [Header("Settings")]
+    [SerializeField] private bool matchRotation = true;
+    [SerializeField] private float cooldown = 0.25f;
 
-    [Header("Position Adjustment")]
-    [Tooltip("Use a small negative number if the player spawns too high")]
-    [SerializeField] private float VerticalOffset = -2f;
+    [Header("Grounding")]
+    [SerializeField] private LayerMask groundLayers = ~0;
+    [SerializeField] private float rayStartHeight = 3f;
+    [SerializeField] private float rayDistance = 10f;
+    [SerializeField] private float groundClearance = 0.03f;
 
-    [Header("Cooldown")]
-    [SerializeField] private float TeleportCooldown = 0.25f;
+    private CharacterController characterController;
+    private float lastTeleportTime = -999f;
 
-    private bool teleporting;
+    private void Awake()
+    {
+        if (firstPersonController != null)
+        {
+            characterController =
+                firstPersonController.GetComponent<CharacterController>();
+        }
+    }
 
     private void OnTriggerEnter(Collider other)
     {
-        if (teleporting)
+        if (Time.time < lastTeleportTime + cooldown)
             return;
 
-        Transform playerRoot = other.transform.root;
-
-        if (!other.CompareTag("Player") &&
-            !playerRoot.CompareTag("Player"))
-        {
+        if (firstPersonController == null || destination == null)
             return;
-        }
 
-        if (TeleportZoneObject == null)
-        {
-            Debug.LogError("Teleport Zone Object is not assigned.", this);
+        bool isPlayer =
+            other.transform == firstPersonController ||
+            other.transform.IsChildOf(firstPersonController);
+
+        if (!isPlayer)
             return;
-        }
 
-        if (FirstPersonController == null)
-        {
-            Debug.LogError("First Person Controller is not assigned.", this);
-            return;
-        }
-
-        StartCoroutine(TeleportPlayer(playerRoot));
+        TeleportPlayer();
     }
 
-    private IEnumerator TeleportPlayer(Transform playerRoot)
+    private void TeleportPlayer()
     {
-        teleporting = true;
+        lastTeleportTime = Time.time;
 
-        // Rotate the whole player around the actual controller position.
-        playerRoot.RotateAround(
-            FirstPersonController.position,
-            Vector3.up,
-            TurnAmount
-        );
+        // Get the player's position relative to the entry trigger.
+        Vector3 localPosition =
+            transform.InverseTransformPoint(
+                firstPersonController.position
+            );
 
-        // Move the root by the amount needed to place the controller
-        // exactly at the teleport destination.
-        Vector3 destination = TeleportZoneObject.position;
+        // Preserve the corresponding horizontal position.
+        Vector3 newPosition =
+            destination.TransformPoint(localPosition);
 
-        // Move to the bottom of the cube instead of its center
-        destination.y -= TeleportZoneObject.localScale.y / 2f;
+        // Important:
+        // Don't trust the transformed Y position.
+        // Find the actual destination floor instead.
+        newPosition = SnapToGround(newPosition);
 
-        Vector3 movement =
-            destination - FirstPersonController.position;
+        Quaternion newRotation =
+            firstPersonController.rotation;
 
-        playerRoot.position += movement;
+        if (matchRotation)
+        {
+            Quaternion relativeRotation =
+                Quaternion.Inverse(transform.rotation) *
+                firstPersonController.rotation;
 
-        yield return new WaitForSeconds(TeleportCooldown);
+            newRotation =
+                destination.rotation *
+                relativeRotation;
+        }
 
-        teleporting = false;
+        // Disable CharacterController before changing transform directly.
+        if (characterController != null)
+        {
+            characterController.enabled = false;
+        }
+
+        firstPersonController.position = newPosition;
+        firstPersonController.rotation = newRotation;
+
+        if (characterController != null)
+        {
+            characterController.enabled = true;
+        }
+    }
+
+    private Vector3 SnapToGround(Vector3 targetPosition)
+    {
+        Vector3 rayOrigin =
+            targetPosition +
+            Vector3.up * rayStartHeight;
+
+        float totalRayDistance =
+            rayStartHeight + rayDistance;
+
+        if (Physics.Raycast(
+            rayOrigin,
+            Vector3.down,
+            out RaycastHit hit,
+            totalRayDistance,
+            groundLayers,
+            QueryTriggerInteraction.Ignore))
+        {
+            float transformToFeet = 0f;
+
+            if (characterController != null)
+            {
+                // Calculates how far the player's transform origin
+                // is above the bottom of the CharacterController.
+                transformToFeet =
+                    (characterController.height * 0.5f)
+                    - characterController.center.y;
+            }
+
+            targetPosition.y =
+                hit.point.y +
+                transformToFeet +
+                groundClearance;
+        }
+        else
+        {
+            Debug.LogWarning(
+                "PlayerTeleporter: No floor found at destination.",
+                this
+            );
+        }
+
+        return targetPosition;
     }
 }
