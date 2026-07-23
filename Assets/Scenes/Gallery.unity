@@ -1067,6 +1067,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PauseScript
   PauseContainer: {fileID: 1212806141}
+  mainPauseScreen: {fileID: 1859911025}
+  aboutScreen: {fileID: 1920402666}
+  leavingScreen: {fileID: 1405094606}
+  playerLook: {fileID: 1032154930}
 --- !u!1 &691620130
 GameObject:
   m_ObjectHideFlags: 0
@@ -1693,6 +1697,17 @@ Camera:
   m_CorrespondingSourceObject: {fileID: 20437472682476688, guid: 11aaea5348574644a9eb4f4504fcce3f, type: 3}
   m_PrefabInstance: {fileID: 1854035598}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1032154930 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 114657890492222300, guid: 11aaea5348574644a9eb4f4504fcce3f, type: 3}
+  m_PrefabInstance: {fileID: 1854035598}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1032154914}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec72980442fddac4d86e75ab24b4d027, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1043803330
 GameObject:
   m_ObjectHideFlags: 0
