@@ -4,6 +4,7 @@ public class ExitDoor : MonoBehaviour
 {
     [SerializeField] private ExitChoice choice;
     [SerializeField] private Animator doorAnimator;
+    [SerializeField] private AudioSource openingAudio;
 
     public void Interact()
     {
@@ -13,6 +14,9 @@ public class ExitDoor : MonoBehaviour
         {
             if (doorAnimator != null)
                 doorAnimator.SetTrigger("Open");
+
+            if (openingAudio != null)
+                openingAudio.Play();
         }
     }
 }
