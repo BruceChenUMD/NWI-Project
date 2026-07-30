@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -16,10 +17,23 @@ public class HallwayRoundManager : MonoBehaviour
 
     private static bool firstRoundHasStarted;
 
+    // These remain populated when the scene reloads.
+    private static readonly List<int> remainingAnomalyIndices =
+        new List<int>();
+
+    private static int lastAnomalyIndex = -1;
+    private static int rememberedVariantCount = -1;
+
     [Header("Round")]
     [Range(0f, 1f)]
     [SerializeField] private float anomalyChance = 0.5f;
+
     [SerializeField] private GameObject[] anomalyVariants;
+
+    [Header("Win")]
+    [SerializeField, Min(1)] private int winningStreak = 10;
+    [SerializeField] private GameObject winPanel;
+    [SerializeField] private float winDelay = 0.75f;
 
     [Header("References")]
     [SerializeField] private TMP_Text streakSign;
@@ -36,8 +50,8 @@ public class HallwayRoundManager : MonoBehaviour
     private bool inspectionStarted;
     private bool readyForChoice;
     private bool resolving;
+    private bool gameWon;
 
-    // Resets static values when starting the game.
     [RuntimeInitializeOnLoadMethod(
         RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStaticValues()
@@ -45,6 +59,10 @@ public class HallwayRoundManager : MonoBehaviour
         Instance = null;
         Streak = 0;
         firstRoundHasStarted = false;
+
+        remainingAnomalyIndices.Clear();
+        lastAnomalyIndex = -1;
+        rememberedVariantCount = -1;
     }
 
     private void Awake()
@@ -54,6 +72,11 @@ public class HallwayRoundManager : MonoBehaviour
 
     private IEnumerator Start()
     {
+        Time.timeScale = 1f;
+
+        if (winPanel != null)
+            winPanel.SetActive(false);
+
         PrepareRound();
 
         if (fadeCanvas != null)
@@ -79,14 +102,9 @@ public class HallwayRoundManager : MonoBehaviour
     {
         inspectionStarted = !requireInspectionTrigger;
 
-        // Turn off every anomaly before selecting one.
-        foreach (GameObject anomaly in anomalyVariants)
-        {
-            if (anomaly != null)
-                anomaly.SetActive(false);
-        }
+        DisableAllAnomalies();
 
-        // The first round is always normal.
+        // Only the first round of the entire game is guaranteed normal.
         if (!firstRoundHasStarted)
         {
             roundHasAnomaly = false;
@@ -95,21 +113,128 @@ public class HallwayRoundManager : MonoBehaviour
         else
         {
             roundHasAnomaly =
-                anomalyVariants.Length > 0 &&
+                HasValidAnomalies() &&
                 Random.value < anomalyChance;
         }
 
-        // If this round has an anomaly, activate only one.
         if (roundHasAnomaly)
         {
-            int selectedAnomaly =
-                Random.Range(0, anomalyVariants.Length);
-
-            if (anomalyVariants[selectedAnomaly] != null)
-                anomalyVariants[selectedAnomaly].SetActive(true);
+            // If activation fails, treat this as a normal round.
+            roundHasAnomaly = ActivateNextAnomaly();
         }
 
         UpdateSign();
+    }
+
+    private bool ActivateNextAnomaly()
+    {
+        // Rebuild the bag if the Inspector array changed.
+        if (rememberedVariantCount != anomalyVariants.Length)
+        {
+            remainingAnomalyIndices.Clear();
+            rememberedVariantCount = anomalyVariants.Length;
+            lastAnomalyIndex = -1;
+        }
+
+        if (remainingAnomalyIndices.Count == 0)
+            RefillAnomalyBag();
+
+        if (remainingAnomalyIndices.Count == 0)
+            return false;
+
+        int bagPosition =
+            Random.Range(0, remainingAnomalyIndices.Count);
+
+        // Prevent the final anomaly from one cycle from becoming
+        // the first anomaly in the next cycle.
+        if (remainingAnomalyIndices.Count > 1 &&
+            remainingAnomalyIndices[bagPosition] ==
+            lastAnomalyIndex)
+        {
+            bagPosition =
+                (bagPosition + 1) %
+                remainingAnomalyIndices.Count;
+        }
+
+        int anomalyIndex =
+            remainingAnomalyIndices[bagPosition];
+
+        remainingAnomalyIndices.RemoveAt(bagPosition);
+
+        GameObject selectedAnomaly =
+            anomalyVariants[anomalyIndex];
+
+        selectedAnomaly.SetActive(true);
+
+        MultiObjectMoveAnomaly[] movers =
+            selectedAnomaly.GetComponentsInChildren
+            <MultiObjectMoveAnomaly>(true);
+
+        foreach (MultiObjectMoveAnomaly mover in movers)
+            mover.ApplyAnomaly();
+
+        lastAnomalyIndex = anomalyIndex;
+
+        Debug.Log(
+            "Activated anomaly: " +
+            selectedAnomaly.name +
+            ". Remaining before repeats: " +
+            remainingAnomalyIndices.Count
+        );
+
+        return true;
+    }
+
+    private void RefillAnomalyBag()
+    {
+        remainingAnomalyIndices.Clear();
+
+        HashSet<GameObject> addedObjects =
+            new HashSet<GameObject>();
+
+        for (int i = 0; i < anomalyVariants.Length; i++)
+        {
+            GameObject anomaly = anomalyVariants[i];
+
+            // Also prevents duplicate Inspector entries.
+            if (anomaly != null && addedObjects.Add(anomaly))
+                remainingAnomalyIndices.Add(i);
+        }
+
+        Debug.Log(
+            "Anomaly bag refilled with " +
+            remainingAnomalyIndices.Count +
+            " anomalies."
+        );
+    }
+
+    private bool HasValidAnomalies()
+    {
+        foreach (GameObject anomaly in anomalyVariants)
+        {
+            if (anomaly != null)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void DisableAllAnomalies()
+    {
+        foreach (GameObject anomaly in anomalyVariants)
+        {
+            if (anomaly == null)
+                continue;
+
+            MultiObjectMoveAnomaly[] movers =
+                anomaly.GetComponentsInChildren
+                <MultiObjectMoveAnomaly>(true);
+
+            foreach (MultiObjectMoveAnomaly mover in movers)
+                mover.RestoreNormal();
+
+            anomaly.SetActive(false);
+        }
     }
 
     public void BeginInspection()
@@ -119,8 +244,13 @@ public class HallwayRoundManager : MonoBehaviour
 
     public bool SubmitChoice(ExitChoice choice)
     {
-        if (resolving || !readyForChoice || !inspectionStarted)
+        if (resolving ||
+            gameWon ||
+            !readyForChoice ||
+            !inspectionStarted)
+        {
             return false;
+        }
 
         resolving = true;
         readyForChoice = false;
@@ -143,9 +273,53 @@ public class HallwayRoundManager : MonoBehaviour
         }
 
         UpdateSign();
-        StartCoroutine(FinishRound());
+
+        if (Streak >= winningStreak)
+        {
+            StartCoroutine(ShowWinScreen());
+        }
+        else
+        {
+            StartCoroutine(FinishRound());
+        }
 
         return true;
+    }
+
+    private IEnumerator ShowWinScreen()
+    {
+        gameWon = true;
+
+        // Allow the final door animation/audio to begin.
+        if (winDelay > 0f)
+            yield return new WaitForSecondsRealtime(winDelay);
+
+        DisableAllAnomalies();
+
+        if (winPanel != null)
+            winPanel.SetActive(true);
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        Debug.Log("YOU WIN! Final streak: " + Streak);
+
+        Time.timeScale = 0f;
+    }
+
+    public void RestartGame()
+    {
+        Time.timeScale = 1f;
+
+        Streak = 0;
+        firstRoundHasStarted = false;
+        remainingAnomalyIndices.Clear();
+        lastAnomalyIndex = -1;
+        rememberedVariantCount = -1;
+
+        SceneManager.LoadScene(
+            SceneManager.GetActiveScene().buildIndex
+        );
     }
 
     private void UpdateSign()

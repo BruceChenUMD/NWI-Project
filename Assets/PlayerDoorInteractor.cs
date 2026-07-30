@@ -2,46 +2,64 @@ using UnityEngine;
 
 public class PlayerDoorInteractor : MonoBehaviour
 {
+    [Header("Interaction")]
     [SerializeField] private Camera playerCamera;
     [SerializeField] private float interactionDistance = 5f;
     [SerializeField] private LayerMask interactionMask = ~0;
 
+    [Header("Tooltip")]
+    [SerializeField] private GameObject doorTooltip;
+
+    private ExitDoor lookedAtDoor;
+
+    private void Awake()
+    {
+        if (playerCamera == null)
+            playerCamera = Camera.main;
+
+        if (doorTooltip != null)
+            doorTooltip.SetActive(false);
+    }
+
     private void Update()
     {
-        if (!Input.GetKeyDown(KeyCode.E))
-            return;
+        lookedAtDoor = FindDoor();
 
-        Debug.Log("E pressed");
+        bool lookingAtDoor = lookedAtDoor != null;
+
+        if (doorTooltip != null)
+            doorTooltip.SetActive(lookingAtDoor);
+
+        if (lookingAtDoor && Input.GetKeyDown(KeyCode.E))
+            lookedAtDoor.Interact();
+    }
+
+    private ExitDoor FindDoor()
+    {
+        if (playerCamera == null)
+            return null;
 
         Ray ray = new Ray(
             playerCamera.transform.position,
             playerCamera.transform.forward
         );
 
-        if (!Physics.Raycast(
+        if (Physics.Raycast(
             ray,
             out RaycastHit hit,
             interactionDistance,
             interactionMask,
             QueryTriggerInteraction.Collide))
         {
-            Debug.LogWarning("The interaction ray hit nothing.");
-            return;
+            return hit.collider.GetComponentInParent<ExitDoor>();
         }
 
-        Debug.Log("Interaction ray hit: " + hit.collider.name);
+        return null;
+    }
 
-        ExitDoor door =
-            hit.collider.GetComponentInParent<ExitDoor>();
-
-        if (door == null)
-        {
-            Debug.LogWarning(
-                hit.collider.name + " does not have ExitDoor on it or its parent."
-            );
-            return;
-        }
-
-        door.Interact();
+    private void OnDisable()
+    {
+        if (doorTooltip != null)
+            doorTooltip.SetActive(false);
     }
 }
