@@ -9,6 +9,8 @@ public class EndGameMenuController : MonoBehaviour
     [Header("Scenes")]
     [SerializeField] private string gameplaySceneName = "Gallery";
 
+    private bool loadingScene;
+
     private void Awake()
     {
         Time.timeScale = 1f;
@@ -19,15 +21,8 @@ public class EndGameMenuController : MonoBehaviour
         UnlockCursor();
     }
 
-    private void OnEnable()
-    {
-        UnlockCursor();
-    }
-
     private void LateUpdate()
     {
-        // Stops the persistent first-person controller
-        // from locking the cursor again.
         UnlockCursor();
     }
 
@@ -45,11 +40,24 @@ public class EndGameMenuController : MonoBehaviour
 
     public void PlayAgain()
     {
+        if (loadingScene)
+            return;
+
+        loadingScene = true;
         Time.timeScale = 1f;
 
+        // Reset streak, anomaly history, and first-round state
+        // before loading Gallery.
         HallwayRoundManager.ResetGameProgress();
 
-        SceneManager.LoadScene(gameplaySceneName);
+        Debug.Log(
+            "Play Again: progress reset. Loading Exhibit 0."
+        );
+
+        SceneManager.LoadScene(
+            gameplaySceneName,
+            LoadSceneMode.Single
+        );
     }
 
     public void CloseGame()

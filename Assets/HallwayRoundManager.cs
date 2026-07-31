@@ -15,10 +15,10 @@ public class HallwayRoundManager : MonoBehaviour
     public static HallwayRoundManager Instance { get; private set; }
     public static int Streak { get; private set; }
 
+    // These values survive Gallery scene reloads.
     private static bool firstRoundHasStarted;
     private static bool initialFadePlayed;
 
-    // Persists while the Gallery scene reloads.
     private static readonly List<int> remainingAnomalyIndices =
         new List<int>();
 
@@ -62,6 +62,10 @@ public class HallwayRoundManager : MonoBehaviour
         ResetGameProgress();
     }
 
+    /// <summary>
+    /// Completely resets the game back to Exhibit 0.
+    /// Called by EndGameMenuController.PlayAgain().
+    /// </summary>
     public static void ResetGameProgress()
     {
         Streak = 0;
@@ -71,6 +75,10 @@ public class HallwayRoundManager : MonoBehaviour
         remainingAnomalyIndices.Clear();
         lastAnomalyIndex = -1;
         rememberedVariantCount = -1;
+
+        Debug.Log(
+            "HallwayRoundManager: Game reset to Exhibit 0."
+        );
     }
 
     private void Awake()
@@ -89,7 +97,8 @@ public class HallwayRoundManager : MonoBehaviour
             fadeCanvas.alpha = 1f;
             fadeCanvas.blocksRaycasts = true;
 
-            // Only wait on the first Gallery round.
+            // Only show the long black delay when starting
+            // a completely new game.
             if (!initialFadePlayed)
             {
                 initialFadePlayed = true;
@@ -119,12 +128,13 @@ public class HallwayRoundManager : MonoBehaviour
     private void PrepareRound()
     {
         resolving = false;
+        gameWon = false;
         readyForChoice = false;
         inspectionStarted = !requireInspectionTrigger;
 
         DisableAllAnomalies();
 
-        // The first round of a new game is always normal.
+        // Exhibit 0 is always normal.
         if (!firstRoundHasStarted)
         {
             roundHasAnomaly = false;
@@ -139,17 +149,16 @@ public class HallwayRoundManager : MonoBehaviour
 
         if (roundHasAnomaly)
         {
-            // If no anomaly can be activated, make this a normal round.
+            // If activation fails, treat this as a normal round.
             roundHasAnomaly = ActivateNextAnomaly();
         }
 
         UpdateSign();
 
-        Debug.Log(
-            roundHasAnomaly
-                ? "ROUND HAS AN ANOMALY"
-                : "ROUND IS NORMAL"
-        );
+        if (roundHasAnomaly)
+            Debug.Log("ROUND HAS AN ANOMALY");
+        else
+            Debug.Log("ROUND IS NORMAL");
     }
 
     private bool ActivateNextAnomaly()
@@ -160,7 +169,7 @@ public class HallwayRoundManager : MonoBehaviour
             return false;
         }
 
-        // Reset the bag if the Inspector array size changed.
+        // Rebuild the bag if the Inspector array changed.
         if (rememberedVariantCount != anomalyVariants.Length)
         {
             remainingAnomalyIndices.Clear();
@@ -177,7 +186,8 @@ public class HallwayRoundManager : MonoBehaviour
         int bagPosition =
             Random.Range(0, remainingAnomalyIndices.Count);
 
-        // Avoid repeating the last anomaly when a new bag begins.
+        // Prevent the last anomaly of one cycle from becoming
+        // the first anomaly of the next cycle.
         if (remainingAnomalyIndices.Count > 1 &&
             remainingAnomalyIndices[bagPosition] ==
             lastAnomalyIndex)
@@ -230,7 +240,7 @@ public class HallwayRoundManager : MonoBehaviour
         {
             GameObject anomaly = anomalyVariants[i];
 
-            // Nulls and duplicate Inspector entries are ignored.
+            // Ignore null and duplicate Inspector entries.
             if (anomaly != null &&
                 addedAnomalies.Add(anomaly))
             {
@@ -238,7 +248,7 @@ public class HallwayRoundManager : MonoBehaviour
             }
         }
 
-        // Shuffle the bag.
+        // Shuffle the anomaly bag.
         for (int i = remainingAnomalyIndices.Count - 1;
              i > 0;
              i--)
@@ -255,8 +265,7 @@ public class HallwayRoundManager : MonoBehaviour
                 temporary;
         }
 
-        // Make sure a new cycle does not begin with the
-        // anomaly that ended the previous cycle.
+        // Avoid an immediate repeat between completed bags.
         if (remainingAnomalyIndices.Count > 1 &&
             remainingAnomalyIndices[0] == lastAnomalyIndex)
         {
@@ -337,12 +346,18 @@ public class HallwayRoundManager : MonoBehaviour
         if (correct)
         {
             Streak++;
-            Debug.Log("Correct! Streak: " + Streak);
+
+            Debug.Log(
+                "Correct! Current exhibit: " + Streak
+            );
         }
         else
         {
             Streak = 0;
-            Debug.Log("Wrong! Streak reset.");
+
+            Debug.Log(
+                "Wrong! Returning to Exhibit 0."
+            );
         }
 
         UpdateSign();
@@ -359,9 +374,13 @@ public class HallwayRoundManager : MonoBehaviour
     {
         gameWon = true;
 
-        // Gives the final door animation/audio time to begin.
+        // Allow the final door sound to begin playing.
         if (winDelay > 0f)
-            yield return new WaitForSecondsRealtime(winDelay);
+        {
+            yield return new WaitForSecondsRealtime(
+                winDelay
+            );
+        }
 
         DisableAllAnomalies();
 
@@ -381,7 +400,8 @@ public class HallwayRoundManager : MonoBehaviour
         Time.timeScale = 1f;
 
         yield return SceneManager.LoadSceneAsync(
-            endGameSceneName
+            endGameSceneName,
+            LoadSceneMode.Single
         );
     }
 
@@ -404,17 +424,23 @@ public class HallwayRoundManager : MonoBehaviour
             SceneManager.GetActiveScene().buildIndex;
 
         yield return SceneManager.LoadSceneAsync(
-            currentSceneIndex
+            currentSceneIndex,
+            LoadSceneMode.Single
         );
     }
 
+    /// <summary>
+    /// Can be used by a restart button inside Gallery.
+    /// </summary>
     public void RestartGame()
     {
         Time.timeScale = 1f;
+
         ResetGameProgress();
 
         SceneManager.LoadScene(
-            SceneManager.GetActiveScene().buildIndex
+            SceneManager.GetActiveScene().buildIndex,
+            LoadSceneMode.Single
         );
     }
 
